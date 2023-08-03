@@ -1,6 +1,6 @@
 #include<bits/stdc++.h>
 
-const int NUMBER_OF_FLASK = 15;
+const int NUMBER_OF_FLASK = 11;
 const int BALLS_PER_FLASK = 4;
 
 enum Color{
@@ -52,48 +52,26 @@ bool isFull(const Flask& flask){
     return flask.size() == BALLS_PER_FLASK;
 }
 
-bool allSameColor(const Flask& flask){
-    if(flask.empty()){
-        return true;
+bool isSameColor(Flask::const_iterator begin, Flask::const_iterator end){
+    return std::adjacent_find(begin, end, std::not_equal_to<>() ) == end;
+}
+
+int numSameColorFromTop(const Flask& flask){
+    int count = 0;
+    for(auto it = flask.rbegin(); it < flask.rend() && *it == *flask.rbegin(); it++){
+        count++;
     }
 
-    return std::adjacent_find(flask.begin(), flask.end(), std::not_equal_to<>() ) == flask.end();
+    return count;
 }
 
-bool canReceiveColor(const Flask& flask, Color color){
-    return !isFull(flask) && flask.back() == color;
-}
-
-int numSameColorAtTop(const Flask& flask){
-    int cnt = 0;
-    for(auto it = flask.rbegin(); it < flask.rend(); it++){
-        if(*it == *flask.rbegin()){
-            cnt++;
-        }
-        else{
-            break;
-        }
-    }
-
-    return cnt;
-}
-
-bool sameColorExceptTop(const Flask& flask){
-    if(flask.empty()){
-        return true;
-    }
-
-    return std::adjacent_find(flask.begin(), flask.end()-1, std::not_equal_to<>() ) == flask.end()-1;
-}
-
-
-struct GameState{
+class GameState{
     public:
     GameState(const std::array<Flask, NUMBER_OF_FLASK>& flasks) : flasks(flasks){}
 
     GameState newState(Move step) const{
         GameState ret(flasks);
-        ret.flasks[step.end].push_back(flasks[step.start].back());
+        ret.flasks[step.end].emplace_back(flasks[step.start].back());
         ret.flasks[step.start].pop_back();
         return ret;
     }
@@ -103,14 +81,6 @@ struct GameState{
             return false;
         }
         
-        if(isFull(flasks[step.end])){
-            return false;
-        }
-
-        if(flasks[step.end].empty() && flasks[step.start].size() == 1){
-            return false;
-        }
-
         if(flasks[step.start].empty()){
             return false;
         }
@@ -128,7 +98,7 @@ struct GameState{
                 continue;
             }
 
-            if(!isFull(flask) || !allSameColor(flask)){
+            if(!isFull(flask) || !isSameColor(flask.begin(), flask.end())){
                 return false;
             }
         }
@@ -136,32 +106,34 @@ struct GameState{
         return true;
     }
 
+    int numExposed(Color color) const{
+        int num = 0;
+        for(auto flask : flasks){                
+            if(!flask.empty() && flask.back() == color){
+                num += numSameColorFromTop(flask);
+            }
+        }
+
+        return num;
+    }
+
     int score(Move move) const{
+        const Flask startFlask = flasks[move.start];
+        const Flask endFlask = flasks[move.end];
         int reward = 0;
 
-        if(flasks[move.end].empty()){
-            if(allSameColor(flasks[move.start])){
+        if(endFlask.empty()){
+            if(isSameColor(startFlask.begin(), startFlask.end())){
                 return -1000;
             }
-            const Color startColor = flasks[move.start].back();
-            int immediatelyExposed = 0;
-            for(auto flask : flasks){
-                if(flask.empty()){
-                    continue;
-                }
 
-                if(flask.back() == startColor){
-                    immediatelyExposed += numSameColorAtTop(flask);
-                }
-            }
-
-            reward += immediatelyExposed * 20;
+            reward += numExposed(startFlask.back()) * 20;
         }
-        else if(allSameColor(flasks[move.end])){
-            reward += flasks[move.end].size() * 100;
+        else if(isSameColor(endFlask.begin(), endFlask.end())){
+            reward += endFlask.size() * 100;
         }
         
-        reward += sameColorExceptTop(flasks[move.start]) * 10 - flasks[move.start].size();
+        reward += isSameColor(startFlask.begin(), std::prev(startFlask.end())) * 10 - startFlask.size();
 
         return reward;
     }
@@ -183,7 +155,13 @@ struct GameState{
 
 std::ostream& operator<<(std::ostream& os, const GameState& state){
     for(int i = 0; i < NUMBER_OF_FLASK; i++){
-        std::cout << i << " | ";
+        if(NUMBER_OF_FLASK >= 10 && i < 10){
+            std::cout << i << "  | ";
+        }
+        else{
+            std::cout << i << " | ";
+        }
+        
         for(auto color : state.flasks[i]){
             std::cout << COLOR_TO_STRING[color] << " ";
         }
@@ -193,7 +171,7 @@ std::ostream& operator<<(std::ostream& os, const GameState& state){
     return os;
 }
 
-bool isVisited(const GameState& state){
+bool hasVisited(const GameState& state){
     static std::vector<GameState> visited;
     for(auto visitedState : visited){
         if(state == visitedState){
@@ -201,12 +179,12 @@ bool isVisited(const GameState& state){
         }
     }
 
-    visited.push_back(state);
+    visited.emplace_back(state);
     return false;
 }
 
 bool dfs(const GameState& state, std::vector<Move>& moves){
-    if(isVisited(state)){
+    if(hasVisited(state)){
         return false;
     }
 
@@ -220,7 +198,7 @@ bool dfs(const GameState& state, std::vector<Move>& moves){
         for(int j = 0; j < NUMBER_OF_FLASK; j++){
             const Move move{i, j};
             if(state.isValidMove(move)){
-                candidates.push_back(move);
+                candidates.emplace_back(move);
             }
         }
     }
@@ -241,36 +219,27 @@ bool dfs(const GameState& state, std::vector<Move>& moves){
 
 int main(){
     GameState state({
+        Flask{BLUE, VIOLET, LIME, MAROON},
+        Flask{BLUE, BLUE, YELLOW, MAROON},
+        Flask{ORANGE, YELLOW},
         Flask{},
-        Flask{YELLOW, YELLOW, VIOLET, GREY},
-        Flask{OLIVE, OLIVE, ORANGE, YELLOW},
-        Flask{VIOLET, MAROON, GREEN, CYAN},
-        Flask{MAROON, OLIVE, BLUE, NAVY},
-        Flask{BLACK, OLIVE, YELLOW, ORANGE},
-        Flask{ORANGE, ORANGE, NAVY, BLUE},
-        Flask{LIME, RED},
-        Flask{NAVY, NAVY, GREY, VIOLET},
-        Flask{CYAN, GREEN, RED, LIME},
-        Flask{BLUE, BLUE, GREY, BLACK},
-        Flask{BLACK, VIOLET, GREEN, MAROON},
-        Flask{GREY, BLACK, CYAN, GREEN},
-        Flask{RED, LIME},
-        Flask{MAROON, CYAN, RED, LIME}
+        Flask{RED, ORANGE, LIME},
+        Flask{RED, VIOLET, GREY, BLUE},
+        Flask{GREY, GREEN, ORANGE, LIME},
+        Flask{MAROON, MAROON, GREEN, ORANGE},
+        Flask{YELLOW, YELLOW, LIME},
+        Flask{VIOLET, VIOLET, RED, GREEN},
+        Flask{GREEN, GREY, RED, GREY}
     });
 
     std::vector<Move> sol = {};
 
-    auto start = std::chrono::high_resolution_clock::now();
     dfs(state, sol);
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-    //std::cout << duration.count() << std::endl;
-
-    // std::cout << state << std::endl;
-    // for(int i = 0; i < sol.size(); i++){
-    //     state = state.newState(sol[i]);
-    //     std::cout << sol[i] << std::endl;
-    //     std::cout << state << std::endl;;
-    // }
-    std::cout << sol.size() << std::endl;
+    using namespace std;
+    cout << state << endl;
+    for(int i = 0; i < sol.size(); i++){
+        state = state.newState(sol[i]);
+        std::cout << sol[i] << std::endl;
+        cout << state << endl;
+    }
 }
